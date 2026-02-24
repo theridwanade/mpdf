@@ -6,6 +6,7 @@ import type { Monaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { marked } from "marked";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -111,16 +112,15 @@ export default function CodeEditor() {
   const [activeTab, setActiveTab] = useState<string>("mdx");
   const [mdxContent, setMdxContent] = useState(tabs[0].defaultValue);
   const [cssContent, setCssContent] = useState(tabs[1].defaultValue);
+  const [isGenerating, setIsGenerating] = useState(false);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const modelsRef = useRef<Map<string, editor.ITextModel>>(new Map());
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const updatePreview = useCallback(() => {
-    if (!iframeRef.current) return;
-
+  const getFullHtml = useCallback(() => {
     const htmlContent = marked.parse(mdxContent);
-    const fullHtml = `
+    return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -133,6 +133,12 @@ export default function CodeEditor() {
 </body>
 </html>
     `;
+  }, [mdxContent, cssContent]);
+
+  const updatePreview = useCallback(() => {
+    if (!iframeRef.current) return;
+
+    const fullHtml = getFullHtml();
 
     const iframe = iframeRef.current;
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -141,7 +147,40 @@ export default function CodeEditor() {
       doc.write(fullHtml);
       doc.close();
     }
-  }, [mdxContent, cssContent]);
+  }, [getFullHtml]);
+
+  const generatePdf = async () => {
+    setIsGenerating(true);
+    try {
+      const html = getFullHtml();
+      const response = await fetch("/api/pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ html }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate PDF");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "document.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   useEffect(() => {
     updatePreview();
@@ -234,8 +273,15 @@ export default function CodeEditor() {
 
       {/* Preview Panel */}
       <div className="flex-1 flex flex-col bg-white rounded-lg overflow-hidden border border-zinc-300">
-        <div className="flex bg-zinc-100 border-b border-zinc-300 px-4 py-2">
+        <div className="flex items-center justify-between bg-zinc-100 border-b border-zinc-300 px-4 py-2">
           <span className="text-sm font-medium text-zinc-600">Preview</span>
+          <Button
+            size="sm"
+            onClick={generatePdf}
+            disabled={isGenerating}
+          >
+            {isGenerating ? "Generating..." : "Print to PDF"}
+          </Button>
         </div>
         <iframe
           ref={iframeRef}
