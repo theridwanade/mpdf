@@ -8,8 +8,9 @@ import Navigation from "@/components/Navigation";
 function EditorContent() {
   const searchParams = useSearchParams();
   const themeId = searchParams.get("theme") || undefined;
+  const documentId = searchParams.get("document") || undefined;
 
-  return <DocumentEditor initialThemeId={themeId} />;
+  return <DocumentEditor initialThemeId={themeId} documentId={documentId} />;
 }
 
 export default function EditorPage() {

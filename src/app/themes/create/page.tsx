@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { marked } from "marked";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ import {
   type ValidationResult,
 } from "@/lib/theme-schema";
 import { validateThemeSubmission } from "@/lib/theme-store";
+import { useAuth } from "@/contexts/AuthContext";
+import { AuthModal } from "@/components/AuthModal";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -269,6 +272,9 @@ li { margin: 0.5rem 0; }
 `;
 
 export default function CreateThemePage() {
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  
   // Form state
   const [themeName, setThemeName] = useState("");
   const [themeDescription, setThemeDescription] = useState("");
@@ -279,6 +285,9 @@ export default function CreateThemePage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [showValidation, setShowValidation] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -346,7 +355,13 @@ ${themeCss}
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    // Check if authenticated
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+
     const fullValidation = validateThemeSubmission({
       name: themeName,
       description: themeDescription,
@@ -359,8 +374,36 @@ ${themeCss}
       return;
     }
 
-    // In production, this would submit to an API
-    setSubmitted(true);
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const token = localStorage.getItem("mpdf_auth_token");
+      const response = await fetch("/api/themes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: themeName,
+          description: themeDescription,
+          css: themeCss,
+          tags: selectedTags,
+        }),
+      });
+
+      if (response.ok) {
+        setSubmitted(true);
+      } else {
+        const data = await response.json();
+        setSubmitError(data.error || "Failed to submit theme");
+      }
+    } catch (error) {
+      setSubmitError("Network error. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -443,13 +486,32 @@ ${themeCss}
               </Link>
               <Button
                 onClick={handleSubmit}
-                disabled={!themeName || !themeDescription || !validation?.valid}
-                className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500"
+                disabled={!themeName || !themeDescription || !validation?.valid || isSubmitting}
+                className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-50"
               >
-                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Submit Theme
+                {isSubmitting ? (
+                  <>
+                    <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Submitting...
+                  </>
+                ) : !isAuthenticated ? (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    Sign in to Submit
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Submit Theme
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -688,6 +750,34 @@ ${themeCss}
           </div>
         </div>
       </div>
+
+      {/* Error Toast */}
+      {submitError && (
+        <div className="fixed bottom-6 right-6 bg-red-900/90 border border-red-700 text-white px-4 py-3 rounded-lg shadow-lg z-50">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {submitError}
+            <button
+              type="button"
+              onClick={() => setSubmitError(null)}
+              className="ml-2 text-red-300 hover:text-white"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        initialMode="register"
+      />
     </div>
   );
 }

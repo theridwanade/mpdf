@@ -1,16 +1,29 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import Navigation from "@/components/Navigation";
 import { cn } from "@/lib/utils";
-import {
-  getAllCommunityThemes,
-  getFeaturedThemes,
-  getAllTags,
-  sortThemes,
-  type CommunityTheme,
-} from "@/lib/theme-store";
+
+// Interface matching API response
+interface ThemeData {
+  _id: string;
+  name: string;
+  description: string;
+  css: string;
+  preview: string;
+  tags: string[];
+  featured: boolean;
+  downloads: number;
+  ratingSum: number;
+  ratingCount: number;
+  author: {
+    _id: string;
+    username: string;
+    verified?: boolean;
+  };
+  createdAt: string;
+}
 
 type SortOption = "popular" | "rating" | "newest" | "name";
 
@@ -18,13 +31,41 @@ export default function ThemeStorePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>("popular");
+  const [themes, setThemes] = useState<ThemeData[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const allThemes = getAllCommunityThemes();
-  const featuredThemes = getFeaturedThemes();
-  const allTags = getAllTags();
+  // Fetch themes from API
+  useEffect(() => {
+    async function fetchThemes() {
+      try {
+        const res = await fetch("/api/themes");
+        if (res.ok) {
+          const data = await res.json();
+          setThemes(data.themes || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch themes:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchThemes();
+  }, []);
+
+  // Extract unique tags from themes
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    themes.forEach((t) => t.tags.forEach((tag) => tagSet.add(tag)));
+    return Array.from(tagSet).sort();
+  }, [themes]);
+
+  // Get featured themes
+  const featuredThemes = useMemo(() => {
+    return themes.filter((t) => t.featured);
+  }, [themes]);
 
   const filteredThemes = useMemo(() => {
-    let filtered = [...allThemes];
+    let filtered = [...themes];
 
     // Filter by search query
     if (searchQuery) {
@@ -45,8 +86,27 @@ export default function ThemeStorePage() {
     }
 
     // Sort
-    return sortThemes(filtered, sortBy);
-  }, [allThemes, searchQuery, selectedTag, sortBy]);
+    switch (sortBy) {
+      case "popular":
+        filtered.sort((a, b) => b.downloads - a.downloads);
+        break;
+      case "rating":
+        filtered.sort((a, b) => {
+          const avgA = a.ratingCount > 0 ? a.ratingSum / a.ratingCount : 0;
+          const avgB = b.ratingCount > 0 ? b.ratingSum / b.ratingCount : 0;
+          return avgB - avgA;
+        });
+        break;
+      case "newest":
+        filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        break;
+      case "name":
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+    }
+
+    return filtered;
+  }, [themes, searchQuery, selectedTag, sortBy]);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -76,7 +136,7 @@ export default function ThemeStorePage() {
       </section>
 
       {/* Featured Themes */}
-      {!searchQuery && !selectedTag && (
+      {!loading && !searchQuery && !selectedTag && featuredThemes.length > 0 && (
         <section className="py-12 border-b border-zinc-800 bg-zinc-900/30">
           <div className="max-w-7xl mx-auto px-6">
             <div className="flex items-center gap-3 mb-6">
@@ -85,7 +145,7 @@ export default function ThemeStorePage() {
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {featuredThemes.map((theme) => (
-                <ThemeCard key={theme.id} theme={theme} featured />
+                <ThemeCard key={theme._id} theme={theme} featured />
               ))}
             </div>
           </div>
@@ -208,10 +268,23 @@ export default function ThemeStorePage() {
               </p>
             </div>
 
-            {filteredThemes.length > 0 ? (
+            {loading ? (
+              <div className="grid md:grid-cols-2 gap-6">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden animate-pulse">
+                    <div className="h-36 bg-zinc-800" />
+                    <div className="p-5 space-y-3">
+                      <div className="h-5 bg-zinc-800 rounded w-3/4" />
+                      <div className="h-4 bg-zinc-800 rounded w-full" />
+                      <div className="h-4 bg-zinc-800 rounded w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredThemes.length > 0 ? (
               <div className="grid md:grid-cols-2 gap-6">
                 {filteredThemes.map((theme) => (
-                  <ThemeCard key={theme.id} theme={theme} />
+                  <ThemeCard key={theme._id} theme={theme} />
                 ))}
               </div>
             ) : (
@@ -238,12 +311,16 @@ function ThemeCard({
   theme,
   featured = false,
 }: {
-  theme: CommunityTheme;
+  theme: ThemeData;
   featured?: boolean;
 }) {
+  const averageRating = theme.ratingCount > 0 
+    ? (theme.ratingSum / theme.ratingCount).toFixed(1) 
+    : "0.0";
+
   return (
     <Link
-      href={`/themes/${theme.id}`}
+      href={`/themes/${theme._id}`}
       className={cn(
         "group block bg-zinc-900 border rounded-xl overflow-hidden transition-all",
         featured
@@ -282,8 +359,8 @@ function ThemeCard({
               <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20">
                 <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
               </svg>
-              <span>{theme.rating.average}</span>
-              <span className="text-zinc-600">({theme.rating.count})</span>
+              <span>{averageRating}</span>
+              <span className="text-zinc-600">({theme.ratingCount})</span>
             </div>
             <span className="text-zinc-500">
               {theme.downloads.toLocaleString()} downloads
@@ -294,9 +371,9 @@ function ThemeCard({
         {/* Author */}
         <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-800">
           <div className="w-6 h-6 bg-gradient-to-br from-violet-500 to-purple-500 rounded-full flex items-center justify-center text-xs font-medium">
-            {theme.author.name[0]}
+            {theme.author.username[0]}
           </div>
-          <span className="text-sm text-zinc-400">{theme.author.name}</span>
+          <span className="text-sm text-zinc-400">{theme.author.username}</span>
           {theme.author.verified && (
             <svg
               className="w-4 h-4 text-blue-400"

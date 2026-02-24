@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PDF_BASE_CSS } from "@/lib/pdf-base";
 import { themes, getDefaultTheme, DEFAULT_CONTENT, type Theme } from "@/lib/themes";
 import { getCommunityThemeById } from "@/lib/theme-store";
+import { useAuth } from "@/contexts/AuthContext";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -20,12 +21,19 @@ type EditorTab = "content" | "styles";
 
 interface DocumentEditorProps {
   initialThemeId?: string;
+  documentId?: string;
 }
 
-export default function DocumentEditor({ initialThemeId }: DocumentEditorProps) {
+export default function DocumentEditor({ initialThemeId, documentId }: DocumentEditorProps) {
+  const { user, isAuthenticated } = useAuth();
+  
   // Document state
   const [documentName, setDocumentName] = useState("Untitled Document");
   const [isEditingName, setIsEditingName] = useState(false);
+  const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(documentId || null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
   // Editor state
   const [activeTab, setActiveTab] = useState<EditorTab>("content");
@@ -39,6 +47,97 @@ export default function DocumentEditor({ initialThemeId }: DocumentEditorProps) 
   const monacoRef = useRef<Monaco | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Load document from database if documentId is provided
+  useEffect(() => {
+    if (documentId && isAuthenticated) {
+      loadDocument(documentId);
+    }
+  }, [documentId, isAuthenticated]);
+
+  const loadDocument = async (id: string) => {
+    try {
+      const token = localStorage.getItem("mpdf_auth_token");
+      const response = await fetch(`/api/documents/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setDocumentName(data.document.name);
+        setMdxContent(data.document.content);
+        setThemeCss(data.document.css);
+        setCurrentDocumentId(data.document.id);
+        setLastSaved(new Date(data.document.updatedAt));
+        setHasUnsavedChanges(false);
+      }
+    } catch (error) {
+      console.error("Failed to load document:", error);
+    }
+  };
+
+  // Auto-save on content change (debounced)
+  useEffect(() => {
+    if (!isAuthenticated || !currentDocumentId) return;
+    
+    const timeoutId = setTimeout(() => {
+      if (hasUnsavedChanges) {
+        saveDocument();
+      }
+    }, 3000); // Auto-save after 3 seconds of no changes
+    
+    return () => clearTimeout(timeoutId);
+  }, [mdxContent, themeCss, documentName, hasUnsavedChanges, currentDocumentId, isAuthenticated]);
+
+  const saveDocument = async () => {
+    if (!isAuthenticated) return;
+    
+    setIsSaving(true);
+    try {
+      const token = localStorage.getItem("mpdf_auth_token");
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+      
+      const body = {
+        name: documentName,
+        content: mdxContent,
+        css: themeCss,
+        themeId: initialThemeId || null,
+      };
+      
+      let response;
+      if (currentDocumentId) {
+        // Update existing document
+        response = await fetch(`/api/documents/${currentDocumentId}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify(body),
+        });
+      } else {
+        // Create new document
+        response = await fetch("/api/documents", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (!currentDocumentId) {
+          setCurrentDocumentId(data.document.id);
+        }
+        setLastSaved(new Date());
+        setHasUnsavedChanges(false);
+      }
+    } catch (error) {
+      console.error("Failed to save document:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Load initial theme if provided
   useEffect(() => {
@@ -157,12 +256,14 @@ ${themeCss}
   const handleContentChange = (value: string | undefined) => {
     if (value !== undefined) {
       setMdxContent(value);
+      setHasUnsavedChanges(true);
     }
   };
 
   const handleCssChange = (value: string | undefined) => {
     if (value !== undefined) {
       setThemeCss(value);
+      setHasUnsavedChanges(true);
     }
   };
 
@@ -171,6 +272,7 @@ ${themeCss}
     if (!documentName.trim()) {
       setDocumentName("Untitled Document");
     }
+    setHasUnsavedChanges(true);
   };
 
   return (
@@ -256,6 +358,43 @@ ${themeCss}
           >
             Docs
           </Link>
+
+          {/* Save Button - Only show when authenticated */}
+          {isAuthenticated && (
+            <Button
+              onClick={saveDocument}
+              disabled={isSaving || (!hasUnsavedChanges && currentDocumentId !== null)}
+              variant="outline"
+              className={cn(
+                "border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-white",
+                !hasUnsavedChanges && currentDocumentId && "text-zinc-500"
+              )}
+            >
+              {isSaving ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin mr-2" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Saving...
+                </>
+              ) : hasUnsavedChanges ? (
+                <>
+                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 mr-2 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Saved
+                </>
+              )}
+            </Button>
+          )}
 
           {/* Export Button */}
           <Button

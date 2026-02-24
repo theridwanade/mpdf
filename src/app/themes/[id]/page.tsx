@@ -7,16 +7,31 @@ import { marked } from "marked";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  getCommunityThemeById,
-  getUserRating,
-  rateTheme,
-  shareTheme,
-  trackDownload,
-  type CommunityTheme,
-} from "@/lib/theme-store";
+import { useAuth } from "@/contexts/AuthContext";
+import AuthModal from "@/components/AuthModal";
 import { PDF_BASE_CSS } from "@/lib/pdf-base";
 import { validateTheme } from "@/lib/theme-schema";
+
+// Interface matching API response
+interface ThemeData {
+  _id: string;
+  name: string;
+  description: string;
+  longDescription?: string;
+  css: string;
+  preview: string;
+  tags: string[];
+  featured: boolean;
+  downloads: number;
+  ratingSum: number;
+  ratingCount: number;
+  author: {
+    _id: string;
+    username: string;
+    verified?: boolean;
+  };
+  createdAt: string;
+}
 
 const PREVIEW_CONTENT = `# Sample Document
 
@@ -71,26 +86,35 @@ const theme = {
 export default function ThemeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { user, token } = useAuth();
   const themeId = params.id as string;
 
-  const [theme, setTheme] = useState<CommunityTheme | null>(null);
+  const [theme, setTheme] = useState<ThemeData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [userRating, setUserRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [showCss, setShowCss] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [ratingLoading, setRatingLoading] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Load theme and user's rating
+  // Load theme from API
   useEffect(() => {
-    const foundTheme = getCommunityThemeById(themeId);
-    if (foundTheme) {
-      setTheme(foundTheme);
-      // Load user's saved rating
-      const savedRating = getUserRating(themeId);
-      if (savedRating) {
-        setUserRating(savedRating);
+    async function fetchTheme() {
+      try {
+        const res = await fetch(`/api/themes/${themeId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTheme(data.theme);
+        }
+      } catch (error) {
+        console.error("Failed to fetch theme:", error);
+      } finally {
+        setLoading(false);
       }
     }
+    fetchTheme();
   }, [themeId]);
 
   // Show notification helper
@@ -100,32 +124,99 @@ export default function ThemeDetailPage() {
   };
 
   // Handle rating
-  const handleRate = (rating: number) => {
-    setUserRating(rating);
-    const saved = rateTheme(themeId, rating);
-    if (saved) {
-      showNotification(`Rated ${rating} star${rating > 1 ? "s" : ""}!`);
+  const handleRate = async (rating: number) => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    
+    setRatingLoading(true);
+    try {
+      const res = await fetch(`/api/themes/${themeId}/rate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ rating }),
+      });
+      
+      if (res.ok) {
+        setUserRating(rating);
+        showNotification(`Rated ${rating} star${rating > 1 ? "s" : ""}!`);
+        // Refresh theme to get updated rating
+        const themeRes = await fetch(`/api/themes/${themeId}`);
+        if (themeRes.ok) {
+          const data = await themeRes.json();
+          setTheme(data.theme);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to rate:", error);
+      showNotification("Failed to rate theme");
+    } finally {
+      setRatingLoading(false);
     }
   };
 
   // Handle share
   const handleShare = async () => {
     if (!theme) return;
-    const result = await shareTheme(theme);
-    if (result === "shared") {
-      showNotification("Shared successfully!");
-    } else if (result === "copied") {
-      showNotification("Link copied to clipboard!");
+    const url = `${window.location.origin}/themes/${theme._id}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: theme.name,
+          text: theme.description,
+          url,
+        });
+        showNotification("Shared successfully!");
+      } catch {
+        // User cancelled or error
+      }
     } else {
-      showNotification("Failed to share");
+      await navigator.clipboard.writeText(url);
+      showNotification("Link copied to clipboard!");
+    }
+  };
+
+  // Handle copy/fork theme
+  const handleCopyTheme = async () => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/themes/${themeId}/copy`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        showNotification("Theme copied to your collection!");
+        router.push(`/themes/${data.theme._id}`);
+      }
+    } catch (error) {
+      console.error("Failed to copy theme:", error);
+      showNotification("Failed to copy theme");
     }
   };
 
   // Handle use theme
-  const handleUseTheme = () => {
+  const handleUseTheme = async () => {
     if (!theme) return;
-    trackDownload(themeId);
-    router.push(`/editor?theme=${theme.id}`);
+    // Track download
+    try {
+      await fetch(`/api/themes/${themeId}/download`, { method: "POST" });
+    } catch {
+      // Ignore tracking errors
+    }
+    router.push(`/editor?theme=${theme._id}`);
   };
 
   const updatePreview = useCallback(() => {
@@ -162,6 +253,18 @@ ${theme.css}
     updatePreview();
   }, [updatePreview]);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white">
+        <Navigation />
+        <div className="pt-32 text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full mx-auto" />
+          <p className="text-zinc-400 mt-4">Loading theme...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!theme) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white">
@@ -177,6 +280,7 @@ ${theme.css}
   }
 
   const validation = validateTheme(theme.css);
+  const averageRating = theme.ratingCount > 0 ? theme.ratingSum / theme.ratingCount : 0;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -210,11 +314,11 @@ ${theme.css}
               {/* Author */}
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-500 rounded-full flex items-center justify-center font-medium">
-                  {theme.author.name[0]}
+                  {theme.author.username[0]}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{theme.author.name}</span>
+                    <span className="font-medium">{theme.author.username}</span>
                     {theme.author.verified && (
                       <svg
                         className="w-4 h-4 text-blue-400"
@@ -242,7 +346,7 @@ ${theme.css}
                         key={star}
                         className={cn(
                           "w-5 h-5",
-                          star <= Math.round(theme.rating.average)
+                          star <= Math.round(averageRating)
                             ? "fill-current"
                             : "fill-zinc-700"
                         )}
@@ -252,8 +356,8 @@ ${theme.css}
                       </svg>
                     ))}
                   </div>
-                  <span className="text-white font-medium">{theme.rating.average}</span>
-                  <span className="text-zinc-500">({theme.rating.count} reviews)</span>
+                  <span className="text-white font-medium">{averageRating.toFixed(1)}</span>
+                  <span className="text-zinc-500">({theme.ratingCount} reviews)</span>
                 </div>
                 <span className="text-zinc-600">•</span>
                 <span className="text-zinc-400">
@@ -276,13 +380,35 @@ ${theme.css}
               <Button
                 variant="outline"
                 className="w-full h-12 text-base bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white"
-                onClick={() => setShowCss(!showCss)}
+                onClick={handleCopyTheme}
               >
                 <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-                {showCss ? "Hide CSS" : "View CSS"}
+                Copy to My Themes
               </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 h-12 text-base bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white"
+                  onClick={() => setShowCss(!showCss)}
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                  </svg>
+                  {showCss ? "Hide" : "CSS"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 h-12 text-base bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white"
+                  onClick={handleShare}
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  Share
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -399,10 +525,11 @@ ${theme.css}
                   <button
                     type="button"
                     key={star}
+                    disabled={ratingLoading}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(0)}
                     onClick={() => handleRate(star)}
-                    className="p-1 transition-transform hover:scale-110"
+                    className="p-1 transition-transform hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg
                       className={cn(
@@ -418,6 +545,11 @@ ${theme.css}
                   </button>
                 ))}
               </div>
+              {!user && (
+                <p className="text-sm text-zinc-500">
+                  Sign in to rate this theme
+                </p>
+              )}
               {userRating > 0 && (
                 <p className="text-sm text-emerald-400">
                   Thanks for rating! You gave {userRating} star{userRating > 1 && "s"}.
@@ -454,10 +586,8 @@ ${theme.css}
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500">Updated</dt>
-                  <dd className="text-zinc-300">
-                    {new Date(theme.updatedAt).toLocaleDateString()}
-                  </dd>
+                  <dt className="text-zinc-500">Downloads</dt>
+                  <dd className="text-zinc-300">{theme.downloads}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-zinc-500">Selectors</dt>
@@ -480,6 +610,12 @@ ${theme.css}
           </div>
         </div>
       )}
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
     </div>
   );
 }
