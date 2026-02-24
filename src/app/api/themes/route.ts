@@ -4,14 +4,16 @@
  */
 import { NextRequest } from "next/server";
 import connectToDatabase from "@/lib/db";
-import { Theme } from "@/models/Theme";
-import { User } from "@/models/User";
+import { Theme, User } from "@/models";
 import { getUserFromRequest, authResponse, authError } from "@/lib/auth";
 import { validateTheme } from "@/lib/theme-schema";
 
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
+    
+    // Ensure User model is registered before populate
+    void User;
 
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);

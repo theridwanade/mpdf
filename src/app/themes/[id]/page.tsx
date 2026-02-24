@@ -14,7 +14,7 @@ import { validateTheme } from "@/lib/theme-schema";
 
 // Interface matching API response
 interface ThemeData {
-  _id: string;
+  id: string;
   name: string;
   description: string;
   longDescription?: string;
@@ -22,15 +22,23 @@ interface ThemeData {
   preview: string;
   tags: string[];
   featured: boolean;
+  approved?: boolean;
   downloads: number;
-  ratingSum: number;
-  ratingCount: number;
-  author: {
-    _id: string;
-    username: string;
-    verified?: boolean;
+  rating: {
+    average: number;
+    count: number;
   };
+  userRating?: number | null;
+  isOwner?: boolean;
+  author: {
+    id: string;
+    name: string;
+    avatar?: string;
+    verified?: boolean;
+  } | null;
+  copiedFrom?: string | null;
   createdAt: string;
+  updatedAt?: string;
 }
 
 const PREVIEW_CONTENT = `# Sample Document
@@ -162,7 +170,7 @@ export default function ThemeDetailPage() {
   // Handle share
   const handleShare = async () => {
     if (!theme) return;
-    const url = `${window.location.origin}/themes/${theme._id}`;
+    const url = `${window.location.origin}/themes/${theme.id}`;
     
     if (navigator.share) {
       try {
@@ -199,7 +207,7 @@ export default function ThemeDetailPage() {
       if (res.ok) {
         const data = await res.json();
         showNotification("Theme copied to your collection!");
-        router.push(`/themes/${data.theme._id}`);
+        router.push(`/themes/${data.theme.id}`);
       }
     } catch (error) {
       console.error("Failed to copy theme:", error);
@@ -216,7 +224,7 @@ export default function ThemeDetailPage() {
     } catch {
       // Ignore tracking errors
     }
-    router.push(`/editor?theme=${theme._id}`);
+    router.push(`/editor?theme=${theme.id}`);
   };
 
   const updatePreview = useCallback(() => {
@@ -280,7 +288,7 @@ ${theme.css}
   }
 
   const validation = validateTheme(theme.css);
-  const averageRating = theme.ratingCount > 0 ? theme.ratingSum / theme.ratingCount : 0;
+  const averageRating = theme.rating.average;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -312,30 +320,32 @@ ${theme.css}
               </div>
 
               {/* Author */}
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-500 rounded-full flex items-center justify-center font-medium">
-                  {theme.author.username[0]}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{theme.author.username}</span>
-                    {theme.author.verified && (
-                      <svg
-                        className="w-4 h-4 text-blue-400"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    )}
+              {theme.author && (
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-500 rounded-full flex items-center justify-center font-medium">
+                    {theme.author.name[0]}
                   </div>
-                  <span className="text-sm text-zinc-500">Theme Creator</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{theme.author.name}</span>
+                      {theme.author.verified && (
+                        <svg
+                          className="w-4 h-4 text-blue-400"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-sm text-zinc-500">Theme Creator</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Stats */}
               <div className="flex items-center gap-6 text-sm">

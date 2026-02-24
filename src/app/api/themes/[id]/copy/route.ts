@@ -3,7 +3,7 @@
  */
 import { NextRequest } from "next/server";
 import connectToDatabase from "@/lib/db";
-import { Theme } from "@/models/Theme";
+import { Theme, User } from "@/models";
 import { getUserFromRequest, authResponse, authError } from "@/lib/auth";
 
 interface RouteParams {
@@ -20,6 +20,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     await connectToDatabase();
+    void User; // Ensure User model is registered for populate
 
     const originalTheme = await Theme.findById(id).lean();
 

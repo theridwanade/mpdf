@@ -5,8 +5,7 @@
  */
 import { NextRequest } from "next/server";
 import connectToDatabase from "@/lib/db";
-import { Theme } from "@/models/Theme";
-import { Rating } from "@/models/Rating";
+import { Theme, Rating, User } from "@/models";
 import { getUserFromRequest, authResponse, authError } from "@/lib/auth";
 import { validateTheme } from "@/lib/theme-schema";
 
@@ -20,6 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     await connectToDatabase();
+    void User; // Ensure User model is registered for populate
 
     const theme = await Theme.findById(id)
       .populate("author", "username avatar verified")

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 // Interface matching API response
 interface ThemeData {
-  _id: string;
+  id: string;
   name: string;
   description: string;
   css: string;
@@ -15,13 +15,16 @@ interface ThemeData {
   tags: string[];
   featured: boolean;
   downloads: number;
-  ratingSum: number;
-  ratingCount: number;
-  author: {
-    _id: string;
-    username: string;
-    verified?: boolean;
+  rating: {
+    average: number;
+    count: number;
   };
+  author: {
+    id: string;
+    name: string;
+    avatar?: string;
+    verified?: boolean;
+  } | null;
   createdAt: string;
 }
 
@@ -91,11 +94,7 @@ export default function ThemeStorePage() {
         filtered.sort((a, b) => b.downloads - a.downloads);
         break;
       case "rating":
-        filtered.sort((a, b) => {
-          const avgA = a.ratingCount > 0 ? a.ratingSum / a.ratingCount : 0;
-          const avgB = b.ratingCount > 0 ? b.ratingSum / b.ratingCount : 0;
-          return avgB - avgA;
-        });
+        filtered.sort((a, b) => b.rating.average - a.rating.average);
         break;
       case "newest":
         filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -145,7 +144,7 @@ export default function ThemeStorePage() {
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {featuredThemes.map((theme) => (
-                <ThemeCard key={theme._id} theme={theme} featured />
+                <ThemeCard key={theme.id} theme={theme} featured />
               ))}
             </div>
           </div>
@@ -284,7 +283,7 @@ export default function ThemeStorePage() {
             ) : filteredThemes.length > 0 ? (
               <div className="grid md:grid-cols-2 gap-6">
                 {filteredThemes.map((theme) => (
-                  <ThemeCard key={theme._id} theme={theme} />
+                  <ThemeCard key={theme.id} theme={theme} />
                 ))}
               </div>
             ) : (
@@ -314,13 +313,9 @@ function ThemeCard({
   theme: ThemeData;
   featured?: boolean;
 }) {
-  const averageRating = theme.ratingCount > 0 
-    ? (theme.ratingSum / theme.ratingCount).toFixed(1) 
-    : "0.0";
-
   return (
     <Link
-      href={`/themes/${theme._id}`}
+      href={`/themes/${theme.id}`}
       className={cn(
         "group block bg-zinc-900 border rounded-xl overflow-hidden transition-all",
         featured
@@ -359,8 +354,8 @@ function ThemeCard({
               <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20">
                 <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
               </svg>
-              <span>{averageRating}</span>
-              <span className="text-zinc-600">({theme.ratingCount})</span>
+              <span>{theme.rating.average}</span>
+              <span className="text-zinc-600">({theme.rating.count})</span>
             </div>
             <span className="text-zinc-500">
               {theme.downloads.toLocaleString()} downloads
@@ -369,25 +364,27 @@ function ThemeCard({
         </div>
 
         {/* Author */}
-        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-800">
-          <div className="w-6 h-6 bg-gradient-to-br from-violet-500 to-purple-500 rounded-full flex items-center justify-center text-xs font-medium">
-            {theme.author.username[0]}
+        {theme.author && (
+          <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-800">
+            <div className="w-6 h-6 bg-gradient-to-br from-violet-500 to-purple-500 rounded-full flex items-center justify-center text-xs font-medium">
+              {theme.author.name[0]}
+            </div>
+            <span className="text-sm text-zinc-400">{theme.author.name}</span>
+            {theme.author.verified && (
+              <svg
+                className="w-4 h-4 text-blue-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
           </div>
-          <span className="text-sm text-zinc-400">{theme.author.username}</span>
-          {theme.author.verified && (
-            <svg
-              className="w-4 h-4 text-blue-400"
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path
-                fillRule="evenodd"
-                d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-          )}
-        </div>
+        )}
 
         {/* Tags */}
         <div className="flex flex-wrap gap-2 mt-3">

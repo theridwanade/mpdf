@@ -3,8 +3,7 @@
  */
 import { NextRequest } from "next/server";
 import connectToDatabase from "@/lib/db";
-import { Theme } from "@/models/Theme";
-import { Rating } from "@/models/Rating";
+import { Theme, Rating, User } from "@/models";
 import { getUserFromRequest, authResponse, authError } from "@/lib/auth";
 
 interface RouteParams {
