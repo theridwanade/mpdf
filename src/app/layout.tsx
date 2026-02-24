@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "mPDF",
-  description: "A pdf design tool for creating professional-looking PDFs.",
+  title: "MPDF - Professional PDF Generator with Markdown & CSS",
+  description: "Create beautiful, print-ready PDFs with Markdown content and CSS themes. Features a theme marketplace, live preview, and instant export.",
 };
 
 export default function RootLayout({

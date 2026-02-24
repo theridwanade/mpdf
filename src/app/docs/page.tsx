@@ -12,6 +12,7 @@ import {
 } from "@/lib/theme-schema";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import Navigation from "@/components/Navigation";
 
 export default function DocsPage() {
   const [activeCategory, setActiveCategory] = useState<SchemaCategory>("css-variables");
@@ -24,34 +25,10 @@ export default function DocsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
-      {/* Header */}
-      <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">M</span>
-            </div>
-            <span className="font-semibold text-xl">MPDF</span>
-          </Link>
-          <nav className="flex items-center gap-6">
-            <Link
-              href="/"
-              className="text-sm text-zinc-400 hover:text-white transition-colors"
-            >
-              Editor
-            </Link>
-            <Link
-              href="/docs"
-              className="text-sm text-white font-medium"
-            >
-              Documentation
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <Navigation />
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-hidden pt-8">
         <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 via-transparent to-purple-500/10" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-900/20 via-transparent to-transparent" />
         <div className="max-w-7xl mx-auto px-6 py-16 relative">
