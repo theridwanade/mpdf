@@ -1,15 +1,31 @@
 /**
- * MPDF Core Styles - Enforced System CSS
- * These styles ensure consistent pagination, printing, and document quality.
- * Users cannot modify these - they are required for proper PDF output.
+ * MPDF Core System CSS
+ * Enforced styles for consistent pagination, printing, and document quality.
+ * These are always applied first and cannot be modified by users.
  */
 
 export const PDF_BASE_CSS = `
 /* ==============================================
-   MPDF CORE SYSTEM STYLES
-   These are enforced and not user-modifiable.
-   They ensure proper PDF pagination & printing.
+   MPDF SYSTEM CSS - ENFORCED
+   Page dimensions, pagination, and print quality
    ============================================== */
+
+/* Page Setup - A4 Default */
+:root {
+  --mpdf-page-width: 210mm;
+  --mpdf-page-height: 297mm;
+  --mpdf-page-margin: 25mm;
+}
+
+/* @page rules for PDF output */
+@page {
+  size: var(--mpdf-page-width) var(--mpdf-page-height);
+  margin: 0;
+}
+
+@page :first {
+  margin: 0;
+}
 
 /* Force exact color reproduction in print */
 html {
@@ -18,29 +34,26 @@ html {
   color-adjust: exact !important;
 }
 
-/* @page rules - enforce zero margins for full-bleed */
-@page {
-  margin: 0 !important;
-}
-
-/* Base reset - consistent box model */
+/* Base reset */
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
-/* Ensure backgrounds print correctly */
-body {
+html, body {
   margin: 0;
   padding: 0;
+}
+
+body {
+  padding: var(--mpdf-page-margin);
   min-height: 100vh;
   background-attachment: fixed;
 }
 
 /* ==============================================
-   PAGINATION CONTROL - ENFORCED
+   PAGINATION CONTROL
    ============================================== */
 
-/* Page break utilities */
 .page-break,
 .page-break-before,
 [data-page-break="before"] {
@@ -61,13 +74,13 @@ body {
   break-inside: avoid !important;
 }
 
-/* Headings should not be orphaned at page bottom */
+/* Headings should not orphan at page bottom */
 h1, h2, h3, h4, h5, h6 {
   page-break-after: avoid !important;
   break-after: avoid !important;
 }
 
-/* Prevent orphans and widows in paragraphs */
+/* Prevent orphans and widows */
 p, li, blockquote {
   orphans: 3;
   widows: 3;
@@ -79,30 +92,28 @@ tr {
   break-inside: avoid !important;
 }
 
-/* Code blocks should stay together */
-pre, code, .code-block {
+/* Code blocks stay together */
+pre, .code-block {
   page-break-inside: avoid !important;
   break-inside: avoid !important;
 }
 
-/* Figures and images stay with captions */
+/* Figures stay with captions */
 figure, .figure {
   page-break-inside: avoid !important;
   break-inside: avoid !important;
 }
 
 /* ==============================================
-   PRINT-SAFE UTILITIES
+   PRINT UTILITIES
    ============================================== */
 
-/* Hide elements in print */
 .no-print,
 .screen-only,
 [data-no-print] {
   display: none !important;
 }
 
-/* Print-only elements (hidden in preview) */
 @media screen {
   .print-only,
   [data-print-only] {
@@ -111,83 +122,39 @@ figure, .figure {
 }
 
 /* ==============================================
-   PAGE STRUCTURE
+   QUALITY & RENDERING
    ============================================== */
 
-/* Document wrapper for proper page flow */
-.mpdf-document {
-  width: 100%;
-}
-
-/* Individual page container */
-.mpdf-page {
-  position: relative;
-  width: 100%;
-  min-height: 100vh;
-  overflow: hidden;
-}
-
-/* Page content area with margins */
-.mpdf-content {
-  position: relative;
-  z-index: 1;
-}
-
-/* Background layer - sits behind content */
-.mpdf-background {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-/* ==============================================
-   FIXED ELEMENTS (Headers/Footers)
-   ============================================== */
-
-.mpdf-header {
-  position: running(header);
-}
-
-.mpdf-footer {
-  position: running(footer);
-}
-
-/* Page counters */
-.page-number::after {
-  content: counter(page);
-}
-
-.page-total::after {
-  content: counter(pages);
-}
-
-/* ==============================================
-   ACCESSIBILITY & QUALITY
-   ============================================== */
-
-/* Ensure readable link colors */
-a {
-  text-decoration-skip-ink: auto;
-}
-
-/* Smooth font rendering */
 body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Proper image rendering */
 img {
   max-width: 100%;
   height: auto;
   image-rendering: -webkit-optimize-contrast;
 }
 
-/* SVG sizing */
 svg {
   max-width: 100%;
   height: auto;
+}
+
+a {
+  text-decoration-skip-ink: auto;
+}
+
+/* ==============================================
+   PAGE NUMBER SUPPORT
+   ============================================== */
+
+.page-number::after {
+  content: counter(page);
+}
+
+.page-total::after {
+  content: counter(pages);
 }
 `;

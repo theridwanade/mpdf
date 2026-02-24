@@ -8,37 +8,24 @@ import { marked } from "marked";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PDF_BASE_CSS } from "@/lib/pdf-base";
-import { themes, getDefaultTheme, type Theme } from "@/lib/themes";
+import { themes, getDefaultTheme, DEFAULT_CONTENT, type Theme } from "@/lib/themes";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
 });
 
-type Tab = {
-  id: string;
-  label: string;
-  language: string;
-};
-
-const tabs: Tab[] = [
-  { id: "mdx", label: "document.mdx", language: "markdown" },
-  { id: "css", label: "styles.css", language: "css" },
-];
-
 export default function CodeEditor() {
-  const [activeTab, setActiveTab] = useState<string>("mdx");
   const [currentTheme, setCurrentTheme] = useState<Theme>(getDefaultTheme());
-  const [mdxContent, setMdxContent] = useState(currentTheme.defaultContent);
-  const [cssContent, setCssContent] = useState(currentTheme.css);
+  const [mdxContent, setMdxContent] = useState(DEFAULT_CONTENT);
+  const [userCss, setUserCss] = useState(""); // User's custom CSS additions
   const [isGenerating, setIsGenerating] = useState(false);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const modelsRef = useRef<Map<string, editor.ITextModel>>(new Map());
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Combine base CSS (enforced) + theme CSS (user customizable)
+  // Build final HTML with: System CSS (hidden) + Theme CSS + User CSS (optional)
   const getFullHtml = useCallback(() => {
     const htmlContent = marked.parse(mdxContent);
     return `
@@ -51,15 +38,9 @@ export default function CodeEditor() {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-/* ========================================
-   MPDF SYSTEM STYLES (Enforced - Do Not Modify)
-   ======================================== */
 ${PDF_BASE_CSS}
-
-/* ========================================
-   THEME STYLES (User Customizable)
-   ======================================== */
-${cssContent}
+${currentTheme.css}
+${userCss}
   </style>
 </head>
 <body>
@@ -67,11 +48,10 @@ ${cssContent}
 </body>
 </html>
     `;
-  }, [mdxContent, cssContent]);
+  }, [mdxContent, currentTheme.css, userCss]);
 
   const updatePreview = useCallback(() => {
     if (!iframeRef.current) return;
-
     const fullHtml = getFullHtml();
     const iframe = iframeRef.current;
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -111,17 +91,11 @@ ${cssContent}
     }
   };
 
+  // Switching theme only changes CSS, NOT content
   const applyTheme = (theme: Theme) => {
     setCurrentTheme(theme);
-    setMdxContent(theme.defaultContent);
-    setCssContent(theme.css);
     setShowThemeSelector(false);
-
-    // Update Monaco models
-    const mdxModel = modelsRef.current.get("mdx");
-    const cssModel = modelsRef.current.get("css");
-    if (mdxModel) mdxModel.setValue(theme.defaultContent);
-    if (cssModel) cssModel.setValue(theme.css);
+    // Content stays the same - only styling changes
   };
 
   useEffect(() => {
@@ -134,49 +108,16 @@ ${cssContent}
   ) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-
-    // Create models with initial theme content
-    const initialValues: Record<string, string> = {
-      mdx: mdxContent,
-      css: cssContent,
-    };
-
-    for (const tab of tabs) {
-      const uri = monaco.Uri.parse(`file:///${tab.id}.${tab.language}`);
-      let model = monaco.editor.getModel(uri);
-      if (!model) {
-        model = monaco.editor.createModel(
-          initialValues[tab.id],
-          tab.language,
-          uri
-        );
-      }
-      modelsRef.current.set(tab.id, model);
-
-      // Listen for changes
-      model.onDidChangeContent(() => {
-        const content = model.getValue();
-        if (tab.id === "mdx") setMdxContent(content);
-        else if (tab.id === "css") setCssContent(content);
-      });
-    }
-
-    // Set initial model
-    const initialModel = modelsRef.current.get(activeTab);
-    if (initialModel) editor.setModel(initialModel);
   };
 
-  const switchTab = (tabId: string) => {
-    if (!editorRef.current || !modelsRef.current.has(tabId)) return;
-    const model = modelsRef.current.get(tabId);
-    if (model) {
-      editorRef.current.setModel(model);
-      setActiveTab(tabId);
+  const handleEditorChange = (value: string | undefined) => {
+    if (value !== undefined) {
+      setMdxContent(value);
     }
   };
 
   return (
-    <div className="flex flex-col gap-4 h-[800px]">
+    <div className="flex flex-col gap-4 h-[850px]">
       {/* Theme Selector Bar */}
       <div className="flex items-center justify-between bg-zinc-800 rounded-lg px-4 py-3 border border-zinc-700">
         <div className="flex items-center gap-3">
@@ -211,8 +152,10 @@ ${cssContent}
             </svg>
           </button>
         </div>
-        <div className="text-xs text-zinc-500">
-          System styles enforced for print consistency
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-500">
+            Page format: A4 • Print-ready
+          </span>
         </div>
       </div>
 
@@ -232,7 +175,7 @@ ${cssContent}
               )}
             >
               <div
-                className="w-full h-20 rounded-md mb-3"
+                className="w-full h-16 rounded-md mb-3"
                 style={{ background: theme.preview }}
               />
               <span className="text-sm font-semibold text-white">
@@ -248,32 +191,18 @@ ${cssContent}
 
       {/* Editor + Preview */}
       <div className="flex gap-4 flex-1 min-h-0">
-        {/* Editor Panel */}
+        {/* Editor Panel - Only Markdown */}
         <div className="flex-1 flex flex-col bg-[#1e1e1e] rounded-lg overflow-hidden border border-zinc-700">
-          {/* Tab Bar */}
-          <div className="flex bg-[#252526] border-b border-zinc-700">
-            {tabs.map((tab) => (
-              <button
-                type="button"
-                key={tab.id}
-                onClick={() => switchTab(tab.id)}
-                className={cn(
-                  "px-4 py-2 text-sm font-medium transition-colors border-r border-zinc-700",
-                  activeTab === tab.id
-                    ? "bg-[#1e1e1e] text-white border-t-2 border-t-blue-500"
-                    : "text-zinc-400 hover:text-white hover:bg-[#2d2d2d]"
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center bg-[#252526] border-b border-zinc-700 px-4 py-2">
+            <span className="text-sm font-medium text-white">document.mdx</span>
           </div>
-
-          {/* Editor */}
           <div className="flex-1 min-h-0">
             <MonacoEditor
               height="100%"
               theme="vs-dark"
+              language="markdown"
+              value={mdxContent}
+              onChange={handleEditorChange}
               onMount={handleEditorMount}
               options={{
                 minimap: { enabled: false },
@@ -282,6 +211,7 @@ ${cssContent}
                 scrollBeyondLastLine: false,
                 wordWrap: "on",
                 automaticLayout: true,
+                lineNumbers: "on",
               }}
             />
           </div>
