@@ -122,7 +122,8 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const body = await request.json();
-    const { name, description, longDescription, css, preview, tags } = body;
+    const { name, description, longDescription, css, preview, tags, publish } = body;
+    const shouldPublish = publish === true;
 
     // Validation
     if (!name || name.length < 3 || name.length > 50) {
@@ -138,7 +139,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate CSS against schema
-    const validation = validateTheme(css);
+    // Use strict validation only when publishing to theme store
+    const validation = validateTheme(css, shouldPublish);
     if (!validation.valid) {
       return authError(
         `Theme CSS validation failed: ${validation.errors[0]?.message || "Invalid CSS"}`,
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
       css,
       preview: preview || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
       tags: Array.isArray(tags) ? tags.slice(0, 10).map((t: string) => t.toLowerCase()) : [],
-      approved: false, // Requires admin approval
+      approved: shouldPublish, // Only approve if publishing with valid CSS
     });
 
     // Populate author
@@ -164,7 +166,7 @@ export async function POST(request: NextRequest) {
 
     return authResponse(
       {
-        message: "Theme submitted for approval",
+        message: shouldPublish ? "Theme published to Theme Store" : "Theme saved privately",
         theme: {
           id: theme._id.toString(),
           name: theme.name,

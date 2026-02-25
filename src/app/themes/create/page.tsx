@@ -283,9 +283,11 @@ export default function CreateThemePage() {
 
   // UI state
   const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validationLenient, setValidationLenient] = useState<ValidationResult | null>(null);
   const [showValidation, setShowValidation] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [wasPublished, setWasPublished] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
@@ -339,10 +341,12 @@ ${themeCss}
     updatePreview();
   }, [updatePreview]);
 
-  // Validate CSS
+  // Validate CSS (both strict and lenient modes)
   useEffect(() => {
-    const result = validateTheme(themeCss);
-    setValidation(result);
+    const strictResult = validateTheme(themeCss, true);
+    const lenientResult = validateTheme(themeCss, false);
+    setValidation(strictResult);
+    setValidationLenient(lenientResult);
   }, [themeCss]);
 
   const handleLoadSkeleton = () => {
@@ -355,23 +359,26 @@ ${themeCss}
     );
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (publish = false) => {
     // Check if authenticated
     if (!isAuthenticated) {
       setShowAuthModal(true);
       return;
     }
 
-    const fullValidation = validateThemeSubmission({
-      name: themeName,
-      description: themeDescription,
-      css: themeCss,
-      tags: selectedTags,
-    });
+    // For publishing, require full validation
+    if (publish) {
+      const fullValidation = validateThemeSubmission({
+        name: themeName,
+        description: themeDescription,
+        css: themeCss,
+        tags: selectedTags,
+      });
 
-    if (!fullValidation.valid) {
-      setShowValidation(true);
-      return;
+      if (!fullValidation.valid) {
+        setShowValidation(true);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -390,14 +397,16 @@ ${themeCss}
           description: themeDescription,
           css: themeCss,
           tags: selectedTags,
+          publish,
         }),
       });
 
       if (response.ok) {
         setSubmitted(true);
+        setWasPublished(publish);
       } else {
         const data = await response.json();
-        setSubmitError(data.error || "Failed to submit theme");
+        setSubmitError(data.error || "Failed to save theme");
       }
     } catch (error) {
       setSubmitError("Network error. Please try again.");
@@ -411,9 +420,12 @@ ${themeCss}
       <div className="min-h-screen bg-zinc-950 text-white">
         <Navigation />
         <div className="pt-32 text-center max-w-xl mx-auto px-6">
-          <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className={cn(
+            "w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6",
+            wasPublished ? "bg-emerald-500/10" : "bg-violet-500/10"
+          )}>
             <svg
-              className="w-10 h-10 text-emerald-400"
+              className={cn("w-10 h-10", wasPublished ? "text-emerald-400" : "text-violet-400")}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -426,21 +438,26 @@ ${themeCss}
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold mb-4">Theme Submitted!</h1>
+          <h1 className="text-3xl font-bold mb-4">
+            {wasPublished ? "Theme Published!" : "Theme Saved!"}
+          </h1>
           <p className="text-zinc-400 mb-8">
-            Your theme "{themeName}" has been submitted for review. Once approved,
-            it will appear in the Theme Store.
+            {wasPublished 
+              ? `Your theme "${themeName}" is now live in the Theme Store and available for everyone to use.`
+              : `Your theme "${themeName}" has been saved privately. You can find it in your dashboard and share it to the Theme Store later.`
+            }
           </p>
           <div className="flex justify-center gap-4">
             <Link
-              href="/themes"
+              href="/dashboard/themes"
               className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
             >
-              Browse Themes
+              My Themes
             </Link>
             <Button
               onClick={() => {
                 setSubmitted(false);
+                setWasPublished(false);
                 setThemeName("");
                 setThemeDescription("");
                 setThemeCss(STARTER_TEMPLATE);
@@ -484,10 +501,12 @@ ${themeCss}
               >
                 Schema Docs
               </Link>
+              {/* Save Privately Button */}
               <Button
-                onClick={handleSubmit}
-                disabled={!themeName || !themeDescription || !validation?.valid || isSubmitting}
-                className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-50"
+                variant="outline"
+                onClick={() => handleSubmit(false)}
+                disabled={!themeName || !themeDescription || !validationLenient?.valid || isSubmitting}
+                className="border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-white disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
@@ -495,21 +514,45 @@ ${themeCss}
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Submitting...
+                    Saving...
                   </>
                 ) : !isAuthenticated ? (
                   <>
                     <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                     </svg>
-                    Sign in to Submit
+                    Sign in
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                     </svg>
-                    Submit Theme
+                    Save Privately
+                  </>
+                )}
+              </Button>
+              {/* Publish to Theme Store Button */}
+              <Button
+                onClick={() => handleSubmit(true)}
+                disabled={!themeName || !themeDescription || !validation?.valid || isSubmitting}
+                className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-50"
+                title={!validation?.valid ? `${validation?.coverage.percentage || 0}% complete - fix validation errors to publish` : "Share to Theme Store"}
+              >
+                {isSubmitting ? (
+                  <>
+                    <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Share to Store
                   </>
                 )}
               </Button>

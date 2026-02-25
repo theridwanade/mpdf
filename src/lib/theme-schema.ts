@@ -647,43 +647,88 @@ export interface ValidationWarning {
 }
 
 /**
+ * Normalize CSS by removing comments and extra whitespace
+ */
+function normalizeCss(css: string): string {
+  return css
+    // Remove CSS comments
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // Normalize whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Check if a CSS string contains a specific selector
+ * More lenient matching to handle various CSS formatting styles
  */
 function cssContainsSelector(css: string, selector: string): boolean {
+  const normalized = normalizeCss(css);
   // Escape special regex characters in selector
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Match selector at start of rule (allowing whitespace)
-  const pattern = new RegExp(`(^|[\\s\\n}])${escaped}\\s*[{,]`, "m");
-  return pattern.test(css);
+  
+  // Try multiple patterns to be more lenient:
+  // 1. Standard selector at start or after } or newline
+  // 2. Selector in a group (after comma)
+  // 3. Selector with any preceding whitespace
+  const patterns = [
+    // Standard: selector followed by { or ,
+    new RegExp(`(^|[}\\s])${escaped}\\s*[{,]`, "mi"),
+    // In a selector group: h1, h2, h3 {}
+    new RegExp(`,\\s*${escaped}\\s*[{,]`, "mi"),
+    // After opening @media or similar
+    new RegExp(`@[^{]*\\{[^}]*${escaped}\\s*\\{`, "mi"),
+  ];
+  
+  return patterns.some(pattern => pattern.test(normalized));
 }
 
 /**
  * Check if a CSS rule for a selector contains a specific property
+ * Handles multiple occurrences of the same selector
  */
 function cssContainsProperty(css: string, selector: string, property: string): boolean {
-  // Find the rule block for the selector
+  const normalized = normalizeCss(css);
+  // Escape special regex characters
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const rulePattern = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "gm");
-  const match = rulePattern.exec(css);
   
-  if (!match) return false;
+  // Find ALL rule blocks for the selector (selector can appear multiple times)
+  const rulePattern = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "gmi");
+  let match;
   
-  const ruleContent = match[1];
-  const propPattern = new RegExp(`${property}\\s*:`, "i");
-  return propPattern.test(ruleContent);
+  while ((match = rulePattern.exec(normalized)) !== null) {
+    const ruleContent = match[1];
+    // Check for property (handle CSS variable format --property-name)
+    const propEscaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const propPattern = new RegExp(`(^|;|\\s)${propEscaped}\\s*:`, "i");
+    if (propPattern.test(ruleContent)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 /**
  * Validate a theme's CSS against the schema
+ * @param css The CSS string to validate
+ * @param strict If true, all required selectors must be present. If false, only basic selectors are required.
  */
-export function validateTheme(css: string): ValidationResult {
+export function validateTheme(css: string, strict = true): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
   
+  // For lenient mode, only require :root and body selectors
+  const essentialSelectors = [":root", "body"];
   const requiredSelectors = THEME_SCHEMA.filter((s) => s.required);
+  const selectorsToCheck = strict 
+    ? requiredSelectors 
+    : requiredSelectors.filter(s => essentialSelectors.includes(s.selector));
+  
   let foundCount = 0;
+  const totalRequired = requiredSelectors.length;
 
-  for (const requirement of requiredSelectors) {
+  for (const requirement of selectorsToCheck) {
     const hasSelector = cssContainsSelector(css, requirement.selector);
     
     if (!hasSelector) {
@@ -696,15 +741,28 @@ export function validateTheme(css: string): ValidationResult {
     } else {
       foundCount++;
       
-      // Check required properties
-      for (const prop of requirement.properties.filter((p) => p.required)) {
-        if (!cssContainsProperty(css, requirement.selector, prop.property)) {
-          warnings.push({
-            selector: requirement.selector,
-            category: requirement.category,
-            message: `Missing property '${prop.property}' in ${requirement.selector}`,
-            severity: "warning",
-          });
+      // Check required properties (only in strict mode)
+      if (strict) {
+        for (const prop of requirement.properties.filter((p) => p.required)) {
+          if (!cssContainsProperty(css, requirement.selector, prop.property)) {
+            warnings.push({
+              selector: requirement.selector,
+              category: requirement.category,
+              message: `Missing property '${prop.property}' in ${requirement.selector}`,
+              severity: "warning",
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // In lenient mode, also count selectors that ARE present but weren't required to check
+  if (!strict) {
+    for (const requirement of requiredSelectors) {
+      if (!essentialSelectors.includes(requirement.selector)) {
+        if (cssContainsSelector(css, requirement.selector)) {
+          foundCount++;
         }
       }
     }
@@ -715,9 +773,9 @@ export function validateTheme(css: string): ValidationResult {
     errors,
     warnings,
     coverage: {
-      total: requiredSelectors.length,
+      total: totalRequired,
       found: foundCount,
-      percentage: Math.round((foundCount / requiredSelectors.length) * 100),
+      percentage: Math.round((foundCount / totalRequired) * 100),
     },
   };
 }
