@@ -24,15 +24,23 @@ interface Theme {
   updatedAt: string;
 }
 
+interface ModalState {
+  type: "confirm" | "error" | null;
+  title: string;
+  message: string;
+  onConfirm?: () => void;
+}
+
 export default function MyThemesPage() {
   const router = useRouter();
   const { user, isLoading, isAuthenticated } = useAuth();
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "published" | "pending" | "private">("all");
+  const [filter, setFilter] = useState<"all" | "public" | "private">("all");
+  const [modal, setModal] = useState<ModalState>({ type: null, title: "", message: "" });
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -65,11 +73,21 @@ export default function MyThemesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this theme? This action cannot be undone.")) {
-      return;
-    }
+  const showError = (message: string) => {
+    setModal({ type: "error", title: "Error", message });
+  };
 
+  const confirmDelete = (id: string) => {
+    setModal({
+      type: "confirm",
+      title: "Delete Theme",
+      message: "Are you sure you want to delete this theme? This action cannot be undone.",
+      onConfirm: () => executeDelete(id),
+    });
+  };
+
+  const executeDelete = async (id: string) => {
+    setModal({ type: null, title: "", message: "" });
     setDeletingId(id);
     try {
       const token = localStorage.getItem("mpdf_auth_token");
@@ -82,37 +100,43 @@ export default function MyThemesPage() {
         setThemes(themes.filter((theme) => theme.id !== id));
       } else {
         const data = await response.json();
-        alert(data.error || "Failed to delete theme");
+        showError(data.error || "Failed to delete theme");
       }
     } catch (error) {
       console.error("Failed to delete theme:", error);
-      alert("Failed to delete theme");
+      showError("Failed to delete theme");
     } finally {
       setDeletingId(null);
     }
   };
 
-  const handlePublish = async (id: string) => {
-    setPublishingId(id);
+  const handleToggleVisibility = async (id: string, currentlyPublic: boolean) => {
+    setTogglingId(id);
     try {
       const token = localStorage.getItem("mpdf_auth_token");
       const response = await fetch(`/api/themes/${id}/publish`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ isPublic: !currentlyPublic }),
       });
 
       if (response.ok) {
-        // Refresh themes to get updated status
-        await fetchThemes();
+        // Update local state
+        setThemes(themes.map((theme) => 
+          theme.id === id ? { ...theme, approved: !currentlyPublic } : theme
+        ));
       } else {
         const data = await response.json();
-        alert(data.error || "Failed to submit theme for review");
+        showError(data.error || "Failed to update theme visibility");
       }
     } catch (error) {
-      console.error("Failed to publish theme:", error);
-      alert("Failed to submit theme for review");
+      console.error("Failed to toggle visibility:", error);
+      showError("Failed to update theme visibility");
     } finally {
-      setPublishingId(null);
+      setTogglingId(null);
     }
   };
 
@@ -127,10 +151,8 @@ export default function MyThemesPage() {
     if (!matchesSearch) return false;
 
     switch (filter) {
-      case "published":
+      case "public":
         return theme.approved;
-      case "pending":
-        return !theme.approved && theme.downloads === 0; // Submitted for review
       case "private":
         return !theme.approved;
       default:
@@ -161,6 +183,61 @@ export default function MyThemesPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <Navigation />
+
+      {/* Modal */}
+      {modal.type && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setModal({ type: null, title: "", message: "" })}
+          />
+          <div className="relative bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              {modal.type === "error" ? (
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+              )}
+              <h3 className="text-lg font-semibold text-white">{modal.title}</h3>
+            </div>
+            <p className="text-zinc-400 mb-6">{modal.message}</p>
+            <div className="flex justify-end gap-3">
+              {modal.type === "confirm" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setModal({ type: null, title: "", message: "" })}
+                    className="border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-white"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={modal.onConfirm}
+                    className="bg-red-600 hover:bg-red-500 text-white"
+                  >
+                    Delete
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  onClick={() => setModal({ type: null, title: "", message: "" })}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-white"
+                >
+                  OK
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-6 pt-24 pb-12">
         {/* Header */}
@@ -216,8 +293,7 @@ export default function MyThemesPage() {
           <div className="flex gap-2">
             {[
               { value: "all", label: "All" },
-              { value: "published", label: "Published" },
-              { value: "pending", label: "Pending" },
+              { value: "public", label: "Public" },
               { value: "private", label: "Private" },
             ].map((opt) => (
               <button
@@ -393,30 +469,37 @@ export default function MyThemesPage() {
                       </svg>
                     </Button>
 
-                    {!theme.approved && (
-                      <Button
-                        variant="outline"
-                        onClick={() => handlePublish(theme.id)}
-                        disabled={publishingId === theme.id}
-                        className="border-violet-700 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400"
-                        title="Submit for Review"
-                      >
-                        {publishingId === theme.id ? (
-                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                        )}
-                      </Button>
-                    )}
+                    <Button
+                      variant="outline"
+                      onClick={() => handleToggleVisibility(theme.id, theme.approved)}
+                      disabled={togglingId === theme.id}
+                      className={cn(
+                        "border-zinc-700",
+                        theme.approved
+                          ? "bg-emerald-500/10 hover:bg-amber-500/10 text-emerald-400 hover:text-amber-400 border-emerald-700 hover:border-amber-700"
+                          : "bg-zinc-800 hover:bg-emerald-500/10 text-zinc-400 hover:text-emerald-400 hover:border-emerald-700"
+                      )}
+                      title={theme.approved ? "Make Private" : "Share to Theme Store"}
+                    >
+                      {togglingId === theme.id ? (
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      ) : theme.approved ? (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      )}
+                    </Button>
 
                     <Button
                       variant="outline"
-                      onClick={() => handleDelete(theme.id)}
+                      onClick={() => confirmDelete(theme.id)}
                       disabled={deletingId === theme.id}
                       className="border-zinc-700 bg-zinc-800 hover:bg-red-900/20 hover:border-red-800 text-zinc-400 hover:text-red-400"
                     >
@@ -449,7 +532,7 @@ export default function MyThemesPage() {
               <div className="text-2xl font-bold text-emerald-400">
                 {themes.filter((t) => t.approved).length}
               </div>
-              <div className="text-sm text-zinc-500">Published</div>
+              <div className="text-sm text-zinc-500">Public</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-white">

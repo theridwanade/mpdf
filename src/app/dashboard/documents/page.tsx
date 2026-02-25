@@ -19,6 +19,13 @@ interface Document {
   updatedAt: string;
 }
 
+interface ModalState {
+  type: "confirm" | "error" | null;
+  title: string;
+  message: string;
+  onConfirm?: () => void;
+}
+
 export default function DocumentsPage() {
   const router = useRouter();
   const { user, isLoading, isAuthenticated } = useAuth();
@@ -26,6 +33,7 @@ export default function DocumentsPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [modal, setModal] = useState<ModalState>({ type: null, title: "", message: "" });
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -58,11 +66,21 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this document? This action cannot be undone.")) {
-      return;
-    }
+  const showError = (message: string) => {
+    setModal({ type: "error", title: "Error", message });
+  };
 
+  const confirmDelete = (id: string) => {
+    setModal({
+      type: "confirm",
+      title: "Delete Document",
+      message: "Are you sure you want to delete this document? This action cannot be undone.",
+      onConfirm: () => executeDelete(id),
+    });
+  };
+
+  const executeDelete = async (id: string) => {
+    setModal({ type: null, title: "", message: "" });
     setDeletingId(id);
     try {
       const token = localStorage.getItem("mpdf_auth_token");
@@ -75,11 +93,11 @@ export default function DocumentsPage() {
         setDocuments(documents.filter((doc) => doc.id !== id));
       } else {
         const data = await response.json();
-        alert(data.error || "Failed to delete document");
+        showError(data.error || "Failed to delete document");
       }
     } catch (error) {
       console.error("Failed to delete document:", error);
-      alert("Failed to delete document");
+      showError("Failed to delete document");
     } finally {
       setDeletingId(null);
     }
@@ -114,6 +132,61 @@ export default function DocumentsPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <Navigation />
+
+      {/* Modal */}
+      {modal.type && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setModal({ type: null, title: "", message: "" })}
+          />
+          <div className="relative bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              {modal.type === "error" ? (
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+              )}
+              <h3 className="text-lg font-semibold text-white">{modal.title}</h3>
+            </div>
+            <p className="text-zinc-400 mb-6">{modal.message}</p>
+            <div className="flex justify-end gap-3">
+              {modal.type === "confirm" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setModal({ type: null, title: "", message: "" })}
+                    className="border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-white"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={modal.onConfirm}
+                    className="bg-red-600 hover:bg-red-500 text-white"
+                  >
+                    Delete
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  onClick={() => setModal({ type: null, title: "", message: "" })}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-white"
+                >
+                  OK
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-6 pt-24 pb-12">
         {/* Header */}
@@ -275,7 +348,7 @@ export default function DocumentsPage() {
                     </Link>
                     <Button
                       variant="outline"
-                      onClick={() => handleDelete(doc.id)}
+                      onClick={() => confirmDelete(doc.id)}
                       disabled={deletingId === doc.id}
                       className="border-zinc-700 bg-zinc-800 hover:bg-red-900/20 hover:border-red-800 text-zinc-400 hover:text-red-400"
                     >

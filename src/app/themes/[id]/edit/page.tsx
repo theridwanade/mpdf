@@ -266,21 +266,25 @@ ${themeCss}
     }
   };
 
-  const handlePublish = async () => {
+  const handleToggleVisibility = async () => {
     try {
       const token = localStorage.getItem("mpdf_auth_token");
       const response = await fetch(`/api/themes/${id}/publish`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ isPublic: !isApproved }),
       });
 
       if (response.ok) {
-        setIsApproved(true);
+        setIsApproved(!isApproved);
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
         const data = await response.json();
-        setSaveError(data.error || "Failed to publish theme");
+        setSaveError(data.error || "Failed to change visibility");
       }
     } catch (error) {
       setSaveError("Network error. Please try again.");
@@ -359,19 +363,33 @@ ${themeCss}
                 </svg>
                 Use in Editor
               </Button>
-              {!isApproved && (
-                <Button
-                  variant="outline"
-                  onClick={handlePublish}
-                  disabled={!validation?.valid}
-                  className="border-violet-700 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400"
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Publish
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                onClick={handleToggleVisibility}
+                disabled={!isApproved && !validation?.valid}
+                className={cn(
+                  "transition-colors",
+                  isApproved
+                    ? "border-emerald-700 bg-emerald-500/10 hover:bg-amber-500/10 text-emerald-400 hover:text-amber-400 hover:border-amber-700"
+                    : "border-zinc-700 bg-zinc-800 hover:bg-emerald-500/10 text-zinc-400 hover:text-emerald-400 hover:border-emerald-700"
+                )}
+              >
+                {isApproved ? (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Public
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                    Share to Store
+                  </>
+                )}
+              </Button>
               <Button
                 onClick={handleSave}
                 disabled={!themeName || !themeDescription || !validation?.valid || isSaving}

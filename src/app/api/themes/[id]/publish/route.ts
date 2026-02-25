@@ -1,5 +1,5 @@
 /**
- * POST /api/themes/[id]/publish - Submit theme for review / publish
+ * POST /api/themes/[id]/publish - Toggle theme visibility (public/private)
  */
 import { NextRequest } from "next/server";
 import connectToDatabase from "@/lib/db";
@@ -32,42 +32,52 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return authError("Not authorized", 403);
     }
 
-    // Validate theme CSS before publishing
-    const validation = validateTheme(theme.css);
-    if (!validation.valid) {
-      return authError(
-        `Theme CSS validation failed: ${validation.errors[0]?.message || "Invalid CSS"}. Please fix the errors before publishing.`,
-        400
-      );
+    // Check if we're making it public or private
+    let body: { isPublic?: boolean } = {};
+    try {
+      body = await request.json();
+    } catch {
+      // If no body, toggle the current state
     }
 
-    // Check required fields
-    if (!theme.name || theme.name.length < 3) {
-      return authError("Theme name must be at least 3 characters", 400);
+    const makePublic = body.isPublic !== undefined ? body.isPublic : !theme.approved;
+
+    // If making public, validate first
+    if (makePublic) {
+      const validation = validateTheme(theme.css);
+      if (!validation.valid) {
+        return authError(
+          `Theme CSS validation failed: ${validation.errors[0]?.message || "Invalid CSS"}. Please fix the errors before sharing.`,
+          400
+        );
+      }
+
+      if (!theme.name || theme.name.length < 3) {
+        return authError("Theme name must be at least 3 characters", 400);
+      }
+
+      if (!theme.description || theme.description.length < 10) {
+        return authError("Theme description must be at least 10 characters", 400);
+      }
     }
 
-    if (!theme.description || theme.description.length < 10) {
-      return authError("Theme description must be at least 10 characters", 400);
-    }
-
-    // For now, auto-approve themes (in production, this would go to a review queue)
-    // Set approved to true
-    theme.approved = true;
+    // Toggle visibility
+    theme.approved = makePublic;
     await theme.save();
 
     return authResponse({
-      message: "Theme published successfully",
+      message: makePublic ? "Theme is now public in the Theme Store" : "Theme is now private",
       theme: {
         id: theme._id.toString(),
         name: theme.name,
         description: theme.description,
-        approved: theme.approved,
+        isPublic: theme.approved,
         createdAt: theme.createdAt,
         updatedAt: theme.updatedAt,
       },
     });
   } catch (error) {
-    console.error("Publish theme error:", error);
-    return authError("Failed to publish theme", 500);
+    console.error("Toggle theme visibility error:", error);
+    return authError("Failed to update theme visibility", 500);
   }
 }
