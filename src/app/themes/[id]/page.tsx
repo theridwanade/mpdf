@@ -367,7 +367,7 @@ ${theme.css}
                     ))}
                   </div>
                   <span className="text-white font-medium">{averageRating.toFixed(1)}</span>
-                  <span className="text-zinc-500">({theme.ratingCount} reviews)</span>
+                  <span className="text-zinc-500">({theme.rating.count} reviews)</span>
                 </div>
                 <span className="text-zinc-600">•</span>
                 <span className="text-zinc-400">

@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PDF_BASE_CSS } from "@/lib/pdf-base";
 import { themes, getDefaultTheme, DEFAULT_CONTENT, type Theme } from "@/lib/themes";
-import { getCommunityThemeById } from "@/lib/theme-store";
 import { useAuth } from "@/contexts/AuthContext";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
@@ -18,6 +17,15 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
 });
 
 type EditorTab = "content" | "styles";
+type ThemeSource = "builtin" | "user" | "store";
+
+interface ThemeOption {
+  id: string;
+  name: string;
+  preview: string;
+  css: string;
+  source: ThemeSource;
+}
 
 interface DocumentEditorProps {
   initialThemeId?: string;
@@ -40,8 +48,15 @@ export default function DocumentEditor({ initialThemeId, documentId }: DocumentE
   const [mdxContent, setMdxContent] = useState(DEFAULT_CONTENT);
   const [themeCss, setThemeCss] = useState(getDefaultTheme().css);
   const [currentThemeName, setCurrentThemeName] = useState(getDefaultTheme().name);
+  const [currentThemeId, setCurrentThemeId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [themeSelectorTab, setThemeSelectorTab] = useState<"builtin" | "my" | "store">("builtin");
+  
+  // Theme options
+  const [userThemes, setUserThemes] = useState<ThemeOption[]>([]);
+  const [storeThemes, setStoreThemes] = useState<ThemeOption[]>([]);
+  const [loadingThemes, setLoadingThemes] = useState(false);
   
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -54,6 +69,71 @@ export default function DocumentEditor({ initialThemeId, documentId }: DocumentE
       loadDocument(documentId);
     }
   }, [documentId, isAuthenticated]);
+
+  // Fetch user's themes when selector is opened
+  useEffect(() => {
+    if (showThemeSelector && isAuthenticated && userThemes.length === 0) {
+      fetchUserThemes();
+    }
+  }, [showThemeSelector, isAuthenticated]);
+
+  // Fetch store themes when selector is opened
+  useEffect(() => {
+    if (showThemeSelector && storeThemes.length === 0) {
+      fetchStoreThemes();
+    }
+  }, [showThemeSelector]);
+
+  const fetchUserThemes = async () => {
+    setLoadingThemes(true);
+    try {
+      const token = localStorage.getItem("mpdf_auth_token");
+      const response = await fetch("/api/themes/my", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUserThemes(
+          data.themes.map((t: { id: string; name: string; preview: string; css: string }) => ({
+            id: t.id,
+            name: t.name,
+            preview: t.preview,
+            css: t.css,
+            source: "user" as ThemeSource,
+          }))
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch user themes:", error);
+    } finally {
+      setLoadingThemes(false);
+    }
+  };
+
+  const fetchStoreThemes = async () => {
+    setLoadingThemes(true);
+    try {
+      const response = await fetch("/api/themes?limit=20");
+
+      if (response.ok) {
+        const data = await response.json();
+        setStoreThemes(
+          data.themes.map((t: { id: string; name: string; preview: string; css: string }) => ({
+            id: t.id,
+            name: t.name,
+            preview: t.preview,
+            css: t.css,
+            source: "store" as ThemeSource,
+          }))
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch store themes:", error);
+    } finally {
+      setLoadingThemes(false);
+    }
+  };
 
   const loadDocument = async (id: string) => {
     try {
@@ -68,6 +148,16 @@ export default function DocumentEditor({ initialThemeId, documentId }: DocumentE
         setMdxContent(data.document.content);
         setThemeCss(data.document.css);
         setCurrentDocumentId(data.document.id);
+        setCurrentThemeId(data.document.themeId || null);
+        if (data.document.themeId) {
+          // Try to find the theme name
+          const builtIn = themes.find((t) => t.id === data.document.themeId);
+          if (builtIn) {
+            setCurrentThemeName(builtIn.name);
+          } else {
+            setCurrentThemeName("Custom");
+          }
+        }
         setLastSaved(new Date(data.document.updatedAt));
         setHasUnsavedChanges(false);
       }
@@ -104,7 +194,7 @@ export default function DocumentEditor({ initialThemeId, documentId }: DocumentE
         name: documentName,
         content: mdxContent,
         css: themeCss,
-        themeId: initialThemeId || null,
+        themeId: currentThemeId || null,
       };
       
       let response;
@@ -128,6 +218,8 @@ export default function DocumentEditor({ initialThemeId, documentId }: DocumentE
         const data = await response.json();
         if (!currentDocumentId) {
           setCurrentDocumentId(data.document.id);
+          // Update URL to include document ID without full reload
+          window.history.replaceState({}, "", `/editor?document=${data.document.id}`);
         }
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
@@ -139,22 +231,49 @@ export default function DocumentEditor({ initialThemeId, documentId }: DocumentE
     }
   };
 
-  // Load initial theme if provided
+  // Load initial theme if provided (from URL parameter)
   useEffect(() => {
     if (initialThemeId) {
-      const communityTheme = getCommunityThemeById(initialThemeId);
-      if (communityTheme) {
-        setThemeCss(communityTheme.css);
-        setCurrentThemeName(communityTheme.name);
-      } else {
-        const builtInTheme = themes.find((t) => t.id === initialThemeId);
-        if (builtInTheme) {
-          setThemeCss(builtInTheme.css);
-          setCurrentThemeName(builtInTheme.name);
-        }
-      }
+      loadThemeById(initialThemeId);
     }
   }, [initialThemeId]);
+
+  const loadThemeById = async (themeId: string) => {
+    // First check built-in themes
+    const builtInTheme = themes.find((t) => t.id === themeId);
+    if (builtInTheme) {
+      setThemeCss(builtInTheme.css);
+      setCurrentThemeName(builtInTheme.name);
+      setCurrentThemeId(builtInTheme.id);
+      return;
+    }
+
+    // Then try to load from API (works for both user themes and store themes)
+    try {
+      const token = localStorage.getItem("mpdf_auth_token");
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`/api/themes/${themeId}`, { headers });
+      if (response.ok) {
+        const data = await response.json();
+        setThemeCss(data.theme.css);
+        setCurrentThemeName(data.theme.name);
+        setCurrentThemeId(data.theme.id);
+        
+        // Track theme usage
+        try {
+          await fetch(`/api/themes/${themeId}/download`, { method: "POST" });
+        } catch {
+          // Ignore tracking errors
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load theme:", error);
+    }
+  };
 
   // Build final HTML with: System CSS (hidden/enforced) + User-editable Theme CSS
   const getFullHtml = useCallback(() => {
@@ -226,12 +345,23 @@ ${themeCss}
     }
   };
 
-  // Load a theme from the store (copies CSS for editing)
-  const loadTheme = (theme: Theme) => {
+  // Load a theme from the selector (copies CSS for editing)
+  const loadTheme = (theme: Theme | ThemeOption) => {
     setThemeCss(theme.css);
     setCurrentThemeName(theme.name);
+    setCurrentThemeId(theme.id);
     setShowThemeSelector(false);
+    setHasUnsavedChanges(true);
   };
+
+  // Get built-in themes as ThemeOptions
+  const builtinThemeOptions: ThemeOption[] = themes.map((t) => ({
+    id: t.id,
+    name: t.name,
+    preview: t.preview,
+    css: t.css,
+    source: "builtin" as ThemeSource,
+  }));
 
   useEffect(() => {
     updatePreview();
@@ -426,37 +556,166 @@ ${themeCss}
       {showThemeSelector && (
         <div className="bg-zinc-900 border-b border-zinc-800 p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-white">Load a Theme</h3>
+            <div className="flex items-center gap-4">
+              <h3 className="text-sm font-medium text-white">Load a Theme</h3>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setThemeSelectorTab("builtin")}
+                  className={cn(
+                    "px-3 py-1 text-xs rounded-md transition-colors",
+                    themeSelectorTab === "builtin"
+                      ? "bg-violet-500/20 text-violet-400"
+                      : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  )}
+                >
+                  Built-in
+                </button>
+                {isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => setThemeSelectorTab("my")}
+                    className={cn(
+                      "px-3 py-1 text-xs rounded-md transition-colors",
+                      themeSelectorTab === "my"
+                        ? "bg-violet-500/20 text-violet-400"
+                        : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                    )}
+                  >
+                    My Themes
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setThemeSelectorTab("store")}
+                  className={cn(
+                    "px-3 py-1 text-xs rounded-md transition-colors",
+                    themeSelectorTab === "store"
+                      ? "bg-violet-500/20 text-violet-400"
+                      : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  )}
+                >
+                  Theme Store
+                </button>
+              </div>
+            </div>
             <Link
               href="/themes"
               className="text-xs text-violet-400 hover:text-violet-300"
             >
-              Browse Theme Store →
+              Browse All Themes →
             </Link>
           </div>
-          <div className="grid grid-cols-4 lg:grid-cols-6 gap-3">
-            {themes.map((theme) => (
-              <button
-                key={theme.id}
-                type="button"
-                onClick={() => loadTheme(theme)}
-                className={cn(
-                  "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
-                  currentThemeName === theme.name
-                    ? "border-violet-500 bg-violet-500/10"
-                    : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50"
-                )}
-              >
-                <div
-                  className="w-full h-12 rounded-md mb-2"
-                  style={{ background: theme.preview }}
-                />
-                <span className="text-xs font-medium text-white truncate w-full">
-                  {theme.name}
-                </span>
-              </button>
-            ))}
-          </div>
+          
+          {loadingThemes ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              {/* Built-in Themes */}
+              {themeSelectorTab === "builtin" && (
+                <div className="grid grid-cols-4 lg:grid-cols-6 gap-3">
+                  {builtinThemeOptions.map((theme) => (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      onClick={() => loadTheme(theme)}
+                      className={cn(
+                        "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
+                        currentThemeId === theme.id
+                          ? "border-violet-500 bg-violet-500/10"
+                          : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50"
+                      )}
+                    >
+                      <div
+                        className="w-full h-12 rounded-md mb-2"
+                        style={{ background: theme.preview }}
+                      />
+                      <span className="text-xs font-medium text-white truncate w-full">
+                        {theme.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* User's Themes */}
+              {themeSelectorTab === "my" && (
+                <div className="grid grid-cols-4 lg:grid-cols-6 gap-3">
+                  {userThemes.length === 0 ? (
+                    <div className="col-span-full text-center py-8">
+                      <p className="text-zinc-500 text-sm mb-3">No themes yet</p>
+                      <Link
+                        href="/themes/create"
+                        className="text-violet-400 hover:text-violet-300 text-sm"
+                      >
+                        Create your first theme →
+                      </Link>
+                    </div>
+                  ) : (
+                    userThemes.map((theme) => (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        onClick={() => loadTheme(theme)}
+                        className={cn(
+                          "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
+                          currentThemeId === theme.id
+                            ? "border-violet-500 bg-violet-500/10"
+                            : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50"
+                        )}
+                      >
+                        <div
+                          className="w-full h-12 rounded-md mb-2"
+                          style={{ background: theme.preview }}
+                        />
+                        <span className="text-xs font-medium text-white truncate w-full">
+                          {theme.name}
+                        </span>
+                        <span className="text-xs text-violet-400 mt-0.5">My Theme</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Theme Store */}
+              {themeSelectorTab === "store" && (
+                <div className="grid grid-cols-4 lg:grid-cols-6 gap-3">
+                  {storeThemes.length === 0 ? (
+                    <div className="col-span-full text-center py-8">
+                      <p className="text-zinc-500 text-sm">Loading themes...</p>
+                    </div>
+                  ) : (
+                    storeThemes.map((theme) => (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        onClick={() => loadTheme(theme)}
+                        className={cn(
+                          "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
+                          currentThemeId === theme.id
+                            ? "border-violet-500 bg-violet-500/10"
+                            : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50"
+                        )}
+                      >
+                        <div
+                          className="w-full h-12 rounded-md mb-2"
+                          style={{ background: theme.preview }}
+                        />
+                        <span className="text-xs font-medium text-white truncate w-full">
+                          {theme.name}
+                        </span>
+                        <span className="text-xs text-emerald-400 mt-0.5">Store</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          
           <p className="text-xs text-zinc-500 mt-3">
             Loading a theme copies its CSS into your editor. You can then customize it freely.
           </p>
