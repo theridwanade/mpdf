@@ -1587,6 +1587,14 @@
   resolved "https://registry.npmjs.org/@sindresorhus/merge-streams/-/merge-streams-4.0.0.tgz"
   integrity sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ==
 
+"@sparticuz/chromium@^133.0.0":
+  version "133.0.0"
+  resolved "https://registry.yarnpkg.com/@sparticuz/chromium/-/chromium-133.0.0.tgz#515bb917d470828c0ffa5644eced95830f9ce83c"
+  integrity sha512-wioNxMtSxRI+Y6ymc/UFPX9lY7A1SDgBezjFITH6arwe5CONfWosNDGpgflUGYajxxGktb1k3kjJ83jWzbccBw==
+  dependencies:
+    follow-redirects "^1.15.9"
+    tar-fs "^3.0.8"
+
 "@swc/helpers@0.5.15":
   version "0.5.15"
   resolved "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.15.tgz"
@@ -2641,6 +2649,11 @@ finalhandler@^2.1.0:
     on-finished "^2.4.1"
     parseurl "^1.3.3"
     statuses "^2.0.1"
+
+follow-redirects@^1.15.9:
+  version "1.15.11"
+  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.11.tgz#777d73d72a92f8ec4d2e410eb47352a56b8e8340"
+  integrity sha512-deG2P0JfjrTxl50XGCDyfI97ZGVCxIpfKYmfyrQ54n5FO/0gfIES8C/Psl6kWVDolizcaaxZJnTS0QSMxvnsBQ==
 
 formdata-polyfill@^4.0.10:
   version "4.0.10"
@@ -3764,9 +3777,9 @@ punycode@^2.3.1:
   resolved "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz"
   integrity sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==
 
-puppeteer-core@24.37.5:
+puppeteer-core@^24.7.2:
   version "24.37.5"
-  resolved "https://registry.npmjs.org/puppeteer-core/-/puppeteer-core-24.37.5.tgz"
+  resolved "https://registry.yarnpkg.com/puppeteer-core/-/puppeteer-core-24.37.5.tgz#b957f424717c13ff15765bc664a9b97808e5cbb4"
   integrity sha512-ybL7iE78YPN4T6J+sPLO7r0lSByp/0NN6PvfBEql219cOnttoTFzCWKiBOjstXSqi/OKpwae623DWAsL7cn2MQ==
   dependencies:
     "@puppeteer/browsers" "2.13.0"
@@ -3776,18 +3789,6 @@ puppeteer-core@24.37.5:
     typed-query-selector "^2.12.0"
     webdriver-bidi-protocol "0.4.1"
     ws "^8.19.0"
-
-puppeteer@^24.37.5:
-  version "24.37.5"
-  resolved "https://registry.npmjs.org/puppeteer/-/puppeteer-24.37.5.tgz"
-  integrity sha512-3PAOIQLceyEmn1Fi76GkGO2EVxztv5OtdlB1m8hMUZL3f8KDHnlvXbvCXv+Ls7KzF1R0KdKBqLuT/Hhrok12hQ==
-  dependencies:
-    "@puppeteer/browsers" "2.13.0"
-    chromium-bidi "14.0.0"
-    cosmiconfig "^9.0.0"
-    devtools-protocol "0.0.1566079"
-    puppeteer-core "24.37.5"
-    typed-query-selector "^2.12.0"
 
 qs@^6.14.0, qs@^6.14.1:
   version "6.15.0"
@@ -4343,7 +4344,7 @@ tapable@^2.3.0:
   resolved "https://registry.npmjs.org/tapable/-/tapable-2.3.0.tgz"
   integrity sha512-g9ljZiwki/LfxmQADO3dEY1CbpmXT5Hm2fJ+QaGKwSXUylMybePR7/67YW7jOrrvjEgL1Fmz5kzyAjWVWLlucg==
 
-tar-fs@^3.1.1:
+tar-fs@^3.0.8, tar-fs@^3.1.1:
   version "3.1.1"
   resolved "https://registry.npmjs.org/tar-fs/-/tar-fs-3.1.1.tgz"
   integrity sha512-LZA0oaPOc2fVo82Txf3gw+AkEd38szODlptMYejQUhndHMLQ9M059uXR+AfS7DNo0NpINvSqDsvyaCrBVkptWg==
