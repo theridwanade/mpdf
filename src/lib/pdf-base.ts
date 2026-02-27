@@ -19,12 +19,12 @@ export const PDF_BASE_CSS = `
 
 /* @page rules for PDF output */
 @page {
-  size: var(--mpdf-page-width) var(--mpdf-page-height);
-  margin: 0;
+  size: A4;
+  margin: 20mm 0;
 }
 
 @page :first {
-  margin: 0;
+  margin: 20mm 0;
 }
 
 /* Force exact color reproduction in print */
